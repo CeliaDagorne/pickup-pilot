@@ -5,25 +5,47 @@ import { FlightSearch } from "@/components/FlightSearch";
 import { readJsonResponse } from "@/lib/api-response";
 import type { FlightLookupResult } from "@/lib/types";
 import { Plane } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type ApiResponse = FlightLookupResult & {
   meta?: { provider: string; date: string; demo: boolean };
   error?: string;
 };
 
+function writeSearchParams(flight: string, date: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("flight", flight);
+  url.searchParams.set("date", date);
+  window.history.pushState(null, "", url);
+}
+
 export default function Home() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchValues, setSearchValues] = useState({
+    flight: "",
+    date: new Date().toISOString().slice(0, 10),
+  });
 
-  const handleSearch = useCallback(async (flight: string, date: string) => {
+  const handleSearch = useCallback(async (
+    flight: string,
+    date: string,
+    updateUrl = true,
+  ) => {
+    const normalizedFlight = flight.trim().toUpperCase();
+    setSearchValues({ flight: normalizedFlight, date });
+
+    if (updateUrl) {
+      writeSearchParams(normalizedFlight, date);
+    }
+
     setLoading(true);
     setError(null);
     setData(null);
 
     try {
-      const params = new URLSearchParams({ flight, date });
+      const params = new URLSearchParams({ flight: normalizedFlight, date });
       const res = await fetch(`/api/flight?${params}`);
       const json = await readJsonResponse<ApiResponse>(res);
 
@@ -38,6 +60,25 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    function searchFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const flight = params.get("flight")?.trim().toUpperCase() ?? "";
+      const date =
+        params.get("date") ?? new Date().toISOString().slice(0, 10);
+
+      setSearchValues({ flight, date });
+
+      if (flight) {
+        void handleSearch(flight, date, false);
+      }
+    }
+
+    searchFromUrl();
+    window.addEventListener("popstate", searchFromUrl);
+    return () => window.removeEventListener("popstate", searchFromUrl);
+  }, [handleSearch]);
 
   return (
     <main className="min-h-screen">
@@ -57,7 +98,13 @@ export default function Home() {
           </p>
         </header>
 
-        <FlightSearch onSearch={handleSearch} loading={loading} />
+        <FlightSearch
+          onSearch={(flight, date) => handleSearch(flight, date, false)}
+          loading={loading}
+          initialFlight={searchValues.flight}
+          initialDate={searchValues.date}
+          onUrlSync={writeSearchParams}
+        />
 
         {error && (
           <p
