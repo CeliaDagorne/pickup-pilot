@@ -1,22 +1,41 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 interface FlightSearchProps {
   onSearch: (flight: string, date: string) => void;
   loading: boolean;
+  initialFlight?: string;
+  initialDate?: string;
+  onUrlSync?: (flight: string, date: string) => void;
 }
 
-export function FlightSearch({ onSearch, loading }: FlightSearchProps) {
+export function FlightSearch({
+  onSearch,
+  loading,
+  initialFlight = "",
+  initialDate,
+  onUrlSync,
+}: FlightSearchProps) {
   const today = new Date().toISOString().slice(0, 10);
-  const [flight, setFlight] = useState("");
-  const [date, setDate] = useState(today);
+  const [flight, setFlight] = useState(initialFlight);
+  const [date, setDate] = useState(initialDate ?? today);
+
+  useEffect(() => {
+    setFlight(initialFlight);
+  }, [initialFlight]);
+
+  useEffect(() => {
+    setDate(initialDate ?? today);
+  }, [initialDate, today]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!flight.trim()) return;
-    onSearch(flight.trim().toUpperCase(), date);
+    const normalizedFlight = flight.trim().toUpperCase();
+    if (!normalizedFlight) return;
+    onUrlSync?.(normalizedFlight, date);
+    onSearch(normalizedFlight, date);
   }
 
   return (
