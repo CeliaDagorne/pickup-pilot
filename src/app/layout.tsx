@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Airport Companion",
+  title: "Pickup Pilot",
   description:
     "Flight status, delays, terminal, gate, baggage, arrival weather, and pre-departure checklist.",
   icons: {

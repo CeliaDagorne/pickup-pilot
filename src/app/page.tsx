@@ -90,7 +90,7 @@ export default function Home() {
             <Plane className="h-10 w-10 text-sky-300" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            Airport Companion
+            Pickup Pilot
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-lg text-slate-300">
             Enter your flight — status, delay, terminal, gate, baggage carousel,

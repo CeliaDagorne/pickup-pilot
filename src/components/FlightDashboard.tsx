@@ -15,6 +15,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { formatSearchDate } from "@/lib/flight-parser";
+import { buildParkingAffiliate } from "@/lib/parking-affiliates";
 import { StatusBadge } from "./StatusBadge";
 import { ChecklistPanel } from "./ChecklistPanel";
 
@@ -47,49 +48,8 @@ function InfoTile({
   );
 }
 
-function buildParkingUrl({
-  airport,
-  terminal,
-  flightNumber,
-  date,
-}: {
-  airport: string;
-  terminal: string | null;
-  flightNumber: string;
-  date: string;
-}) {
-  const template = process.env.NEXT_PUBLIC_PARKING_AFFILIATE_URL;
-  const query = new URLSearchParams({
-    airport,
-    terminal: terminal ?? "",
-    flight: flightNumber,
-    date,
-    utm_source: "airport-companion",
-    utm_medium: "arrival-card",
-    utm_campaign: "parking",
-  });
-
-  if (!template) {
-    return `https://www.google.com/search?${new URLSearchParams({
-      q: `${airport} airport short stay parking terminal ${terminal ?? ""}`,
-    })}`;
-  }
-
-  return template
-    .replaceAll("{airport}", encodeURIComponent(airport))
-    .replaceAll("{terminal}", encodeURIComponent(terminal ?? ""))
-    .replaceAll("{flight}", encodeURIComponent(flightNumber))
-    .replaceAll("{date}", encodeURIComponent(date))
-    .concat(template.includes("?") ? `&${query}` : `?${query}`);
-}
-
 function ParkingAffiliateCard({ flight }: { flight: FlightLookupResult["flight"] }) {
-  const parkingUrl = buildParkingUrl({
-    airport: flight.arrival.airport,
-    terminal: flight.arrival.terminal,
-    flightNumber: flight.flightNumber,
-    date: flight.flightDate,
-  });
+  const parking = buildParkingAffiliate(flight);
 
   return (
     <section className="glass-card overflow-hidden border-sky-400/20 p-6">
@@ -109,17 +69,27 @@ function ParkingAffiliateCard({ flight }: { flight: FlightLookupResult["flight"]
             <p className="mt-2 max-w-2xl text-sm text-slate-400">
               Avoid circling around arrivals. Compare pickup parking options and
               wait close to the terminal while the flight lands and bags arrive.
+              {!parking.isFallback && (
+                <>
+                  {" "}
+                  Recommended partner:{" "}
+                  <span className="font-medium text-slate-300">
+                    {parking.partnerName}
+                  </span>
+                  .
+                </>
+              )}
             </p>
           </div>
         </div>
 
         <a
-          href={parkingUrl}
+          href={parking.url}
           target="_blank"
           rel="noreferrer sponsored"
           className="btn-primary inline-flex shrink-0 items-center justify-center gap-2"
         >
-          Compare parking
+          {parking.isFallback ? "Search parking" : `Compare on ${parking.partnerName}`}
           <ExternalLink className="h-4 w-4" />
         </a>
       </div>
