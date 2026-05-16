@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "Airport Companion",
   description:
     "Flight status, delays, terminal, gate, baggage, arrival weather, and pre-departure checklist.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
