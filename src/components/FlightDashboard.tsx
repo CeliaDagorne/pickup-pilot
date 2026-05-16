@@ -4,9 +4,11 @@ import type { AirportLeg, FlightLookupResult } from "@/lib/types";
 import {
   AlertCircle,
   BaggageClaim,
+  Car,
   Clock,
   CloudSun,
   DoorOpen,
+  ExternalLink,
   MapPin,
   PlaneLanding,
   PlaneTakeoff,
@@ -45,9 +47,88 @@ function InfoTile({
   );
 }
 
+function buildParkingUrl({
+  airport,
+  terminal,
+  flightNumber,
+  date,
+}: {
+  airport: string;
+  terminal: string | null;
+  flightNumber: string;
+  date: string;
+}) {
+  const template = process.env.NEXT_PUBLIC_PARKING_AFFILIATE_URL;
+  const query = new URLSearchParams({
+    airport,
+    terminal: terminal ?? "",
+    flight: flightNumber,
+    date,
+    utm_source: "airport-companion",
+    utm_medium: "arrival-card",
+    utm_campaign: "parking",
+  });
+
+  if (!template) {
+    return `https://www.google.com/search?${new URLSearchParams({
+      q: `${airport} airport short stay parking terminal ${terminal ?? ""}`,
+    })}`;
+  }
+
+  return template
+    .replaceAll("{airport}", encodeURIComponent(airport))
+    .replaceAll("{terminal}", encodeURIComponent(terminal ?? ""))
+    .replaceAll("{flight}", encodeURIComponent(flightNumber))
+    .replaceAll("{date}", encodeURIComponent(date))
+    .concat(template.includes("?") ? `&${query}` : `?${query}`);
+}
+
+function ParkingAffiliateCard({ flight }: { flight: FlightLookupResult["flight"] }) {
+  const parkingUrl = buildParkingUrl({
+    airport: flight.arrival.airport,
+    terminal: flight.arrival.terminal,
+    flightNumber: flight.flightNumber,
+    date: flight.flightDate,
+  });
+
+  return (
+    <section className="glass-card overflow-hidden border-sky-400/20 p-6">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/25">
+            <Car className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">
+              Picking someone up?
+            </p>
+            <h3 className="mt-1 text-xl font-bold text-white">
+              Find short-stay parking near {flight.arrival.airport}
+              {flight.arrival.terminal ? ` Terminal ${flight.arrival.terminal}` : ""}
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">
+              Avoid circling around arrivals. Compare pickup parking options and
+              wait close to the terminal while the flight lands and bags arrive.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={parkingUrl}
+          target="_blank"
+          rel="noreferrer sponsored"
+          className="btn-primary inline-flex shrink-0 items-center justify-center gap-2"
+        >
+          Compare parking
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      </div>
+    </section>
+  );
+}
+
 export function FlightDashboard({ data }: FlightDashboardProps) {
   const { flight, weather, checklist, meta } = data;
-  console.log('data', data)
   const delay =
     flight.delayMinutes != null && flight.delayMinutes > 0
       ? `+${flight.delayMinutes} min`
@@ -113,6 +194,8 @@ export function FlightDashboard({ data }: FlightDashboardProps) {
         <LegCard type="arrival" leg={flight.arrival} icon={PlaneLanding} />
       </div>
 
+      <ParkingAffiliateCard flight={flight} />
+
       {weather && (
         <section className="glass-card p-6">
           <div className="mb-4 flex items-center gap-2 text-sky-300">
@@ -152,8 +235,6 @@ function LegCard({
   icon: React.ComponentType<{ className?: string }>;
 }) {
   const title = type === "departure" ? "Departure" : "Arrival";
-
-  console.log('leg', leg)
 
   return (
     <article className="glass-card p-6">
