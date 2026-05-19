@@ -5,7 +5,7 @@ import { FlightMatchList } from "@/components/FlightMatchList";
 import { FlightSearch } from "@/components/FlightSearch";
 import { readJsonResponse } from "@/lib/api-response";
 import type { FlightLookupResult, FlightSearchResult } from "@/lib/types";
-import { Plane } from "lucide-react";
+import { ArrowLeft, Plane } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type ApiResponse = FlightLookupResult & {
@@ -32,6 +32,12 @@ function writeSearchParams(flight: string, date: string) {
   window.history.pushState(null, "", url);
 }
 
+function clearHomeUrl() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  window.history.pushState(null, "", url);
+}
+
 function writeRouteSearchParams({
   arrival,
   origin,
@@ -49,17 +55,35 @@ function writeRouteSearchParams({
   window.history.pushState(null, "", url);
 }
 
+const emptySearchValues = () => ({
+  flight: "",
+  arrival: "",
+  origin: "",
+  date: new Date().toISOString().slice(0, 10),
+});
+
 export default function Home() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [matches, setMatches] = useState<FlightSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchValues, setSearchValues] = useState({
-    flight: "",
-    arrival: "",
-    origin: "",
-    date: new Date().toISOString().slice(0, 10),
-  });
+  const [searchKey, setSearchKey] = useState(0);
+  const [searchValues, setSearchValues] = useState(emptySearchValues);
+
+  const showResultsView =
+    Boolean(data) ||
+    matches.length > 0 ||
+    (loading && (searchValues.flight || searchValues.arrival));
+
+  const handleNewSearch = useCallback(() => {
+    clearHomeUrl();
+    setData(null);
+    setMatches([]);
+    setError(null);
+    setSearchValues(emptySearchValues());
+    setSearchKey((k) => k + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const handleSearch = useCallback(async (
     flight: string,
@@ -148,6 +172,15 @@ export default function Home() {
       const date =
         params.get("date") ?? new Date().toISOString().slice(0, 10);
 
+      if (!flight && !arrival) {
+        setData(null);
+        setMatches([]);
+        setError(null);
+        setSearchValues(emptySearchValues());
+        setSearchKey((k) => k + 1);
+        return;
+      }
+
       setSearchValues({ flight, arrival, origin, date });
 
       if (flight) {
@@ -168,29 +201,66 @@ export default function Home() {
 
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
         <header className="mb-10 text-center">
-          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-sky-500/20 p-4 ring-1 ring-sky-400/30">
+          <button
+            type="button"
+            onClick={showResultsView ? handleNewSearch : undefined}
+            className={`mb-4 inline-flex items-center justify-center rounded-2xl bg-sky-500/20 p-4 ring-1 ring-sky-400/30 ${
+              showResultsView
+                ? "cursor-pointer transition hover:bg-sky-500/30 hover:ring-sky-400/50"
+                : "cursor-default"
+            }`}
+            aria-label={showResultsView ? "Back to new search" : undefined}
+          >
             <Plane className="h-10 w-10 text-sky-300" />
-          </div>
+          </button>
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            Pickup Pilot
+            {showResultsView ? (
+              <button
+                type="button"
+                onClick={handleNewSearch}
+                className="cursor-pointer transition hover:text-sky-200"
+              >
+                Pickup Pilot
+              </button>
+            ) : (
+              "Pickup Pilot"
+            )}
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-lg text-slate-300">
-            Track an arriving flight by number or find it by airport and route —
-            perfect when you&apos;re picking someone up.
+            Track an arriving flight by number — perfect when you&apos;re
+            picking someone up.
           </p>
         </header>
 
-        <FlightSearch
-          onSearch={(flight, date) => handleSearch(flight, date, false)}
-          onRouteSearch={handleRouteSearch}
-          loading={loading}
-          initialFlight={searchValues.flight}
-          initialDate={searchValues.date}
-          initialArrival={searchValues.arrival}
-          initialOrigin={searchValues.origin}
-          onUrlSync={writeSearchParams}
-          onRouteUrlSync={writeRouteSearchParams}
-        />
+        {showResultsView && (
+          <button
+            type="button"
+            onClick={handleNewSearch}
+            className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-400 transition hover:text-sky-300"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            New search
+          </button>
+        )}
+
+        {!showResultsView && (
+          <FlightSearch
+            key={searchKey}
+            onSearch={(flight, date) => handleSearch(flight, date, false)}
+            onRouteSearch={handleRouteSearch}
+            loading={loading}
+            initialFlight={searchValues.flight}
+            initialDate={searchValues.date}
+            initialArrival={searchValues.arrival}
+            initialOrigin={searchValues.origin}
+            onUrlSync={writeSearchParams}
+            onRouteUrlSync={writeRouteSearchParams}
+          />
+        )}
+
+        {showResultsView && loading && !data && (
+          <p className="py-12 text-center text-slate-400">Loading flight…</p>
+        )}
 
         {error && (
           <p
@@ -219,9 +289,9 @@ export default function Home() {
           </div>
         )}
 
-        {!data && !loading && !error && matches.length === 0 && (
+        {!showResultsView && !loading && !error && (
           <p className="mt-8 text-center text-sm text-slate-500">
-            Examples: AF123 · route search NCE from BER on today&apos;s date
+            Example: AF123 on today&apos;s date
           </p>
         )}
       </div>
