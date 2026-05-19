@@ -1,6 +1,7 @@
-import type { FlightInfo } from "../types";
-import { fetchAeroDataBoxFlight } from "./aerodatabox";
+import type { FlightInfo, FlightSearchResult } from "../types";
+import { fetchAeroDataBoxFlight, searchAeroDataBoxArrivals } from "./aerodatabox";
 import { getDemoFlight } from "./demo";
+import { searchDemoArrivals } from "./demo-search";
 
 export type ProviderName = "aerodatabox" | "demo";
 
@@ -28,4 +29,31 @@ export async function lookupFlight(
   const flight = await fetchAeroDataBoxFlight(display, date);
   if (!flight) throw new Error("Flight not found for this date");
   return { flight, provider };
+}
+
+export async function searchFlightsByRoute({
+  arrivalAirport,
+  originAirport,
+  date,
+}: {
+  arrivalAirport: string;
+  originAirport?: string;
+  date: string;
+}): Promise<{ flights: FlightSearchResult[]; provider: ProviderName }> {
+  const provider = resolveProvider();
+
+  if (provider === "demo") {
+    return {
+      flights: searchDemoArrivals({ arrivalAirport, originAirport }),
+      provider,
+    };
+  }
+
+  const flights = await searchAeroDataBoxArrivals({
+    arrivalAirport,
+    originAirport,
+    date,
+  });
+
+  return { flights, provider };
 }

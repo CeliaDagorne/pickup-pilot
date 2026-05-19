@@ -1,9 +1,10 @@
 "use client";
 
 import { FlightDashboard } from "@/components/FlightDashboard";
+import { FlightMatchList } from "@/components/FlightMatchList";
 import { FlightSearch } from "@/components/FlightSearch";
 import { readJsonResponse } from "@/lib/api-response";
-import type { FlightLookupResult } from "@/lib/types";
+import type { FlightLookupResult, FlightSearchResult } from "@/lib/types";
 import { Plane } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -12,19 +13,51 @@ type ApiResponse = FlightLookupResult & {
   error?: string;
 };
 
+type RouteSearchResponse = {
+  flights: FlightSearchResult[];
+  meta?: {
+    arrival: string;
+    origin: string | null;
+    date: string;
+    count: number;
+  };
+  error?: string;
+};
+
 function writeSearchParams(flight: string, date: string) {
   const url = new URL(window.location.href);
+  url.search = "";
   url.searchParams.set("flight", flight);
+  url.searchParams.set("date", date);
+  window.history.pushState(null, "", url);
+}
+
+function writeRouteSearchParams({
+  arrival,
+  origin,
+  date,
+}: {
+  arrival: string;
+  origin: string;
+  date: string;
+}) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.searchParams.set("arrival", arrival);
+  if (origin) url.searchParams.set("origin", origin);
   url.searchParams.set("date", date);
   window.history.pushState(null, "", url);
 }
 
 export default function Home() {
   const [data, setData] = useState<ApiResponse | null>(null);
+  const [matches, setMatches] = useState<FlightSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchValues, setSearchValues] = useState({
     flight: "",
+    arrival: "",
+    origin: "",
     date: new Date().toISOString().slice(0, 10),
   });
 
@@ -34,7 +67,7 @@ export default function Home() {
     updateUrl = true,
   ) => {
     const normalizedFlight = flight.trim().toUpperCase();
-    setSearchValues({ flight: normalizedFlight, date });
+    setSearchValues((prev) => ({ ...prev, flight: normalizedFlight, date }));
 
     if (updateUrl) {
       writeSearchParams(normalizedFlight, date);
@@ -43,6 +76,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setData(null);
+    setMatches([]);
 
     try {
       const params = new URLSearchParams({ flight: normalizedFlight, date });
@@ -61,24 +95,72 @@ export default function Home() {
     }
   }, []);
 
+  const handleRouteSearch = useCallback(async ({
+    arrival,
+    origin,
+    date,
+  }: {
+    arrival: string;
+    origin: string;
+    date: string;
+  }) => {
+    const normalizedArrival = arrival.trim().toUpperCase();
+    const normalizedOrigin = origin.trim().toUpperCase();
+    setSearchValues({
+      flight: "",
+      arrival: normalizedArrival,
+      origin: normalizedOrigin,
+      date,
+    });
+
+    setLoading(true);
+    setError(null);
+    setData(null);
+    setMatches([]);
+
+    try {
+      const params = new URLSearchParams({ arrival: normalizedArrival, date });
+      if (normalizedOrigin) params.set("origin", normalizedOrigin);
+      const res = await fetch(`/api/flights/search?${params}`);
+      const json = await readJsonResponse<RouteSearchResponse>(res);
+
+      if (!res.ok) {
+        throw new Error(json.error ?? `Could not search flights (${res.status})`);
+      }
+
+      setMatches(json.flights);
+      if (json.flights.length === 0) {
+        setError("No matching flights found for this route and date.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     function searchFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const flight = params.get("flight")?.trim().toUpperCase() ?? "";
+      const arrival = params.get("arrival")?.trim().toUpperCase() ?? "";
+      const origin = params.get("origin")?.trim().toUpperCase() ?? "";
       const date =
         params.get("date") ?? new Date().toISOString().slice(0, 10);
 
-      setSearchValues({ flight, date });
+      setSearchValues({ flight, arrival, origin, date });
 
       if (flight) {
         void handleSearch(flight, date, false);
+      } else if (arrival) {
+        void handleRouteSearch({ arrival, origin, date });
       }
     }
 
     searchFromUrl();
     window.addEventListener("popstate", searchFromUrl);
     return () => window.removeEventListener("popstate", searchFromUrl);
-  }, [handleSearch]);
+  }, [handleRouteSearch, handleSearch]);
 
   return (
     <main className="min-h-screen">
@@ -93,17 +175,21 @@ export default function Home() {
             Pickup Pilot
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-lg text-slate-300">
-            Enter your flight — status, delay, terminal, gate, baggage carousel,
-            arrival weather, and pre-departure checklist.
+            Track an arriving flight by number or find it by airport and route —
+            perfect when you&apos;re picking someone up.
           </p>
         </header>
 
         <FlightSearch
           onSearch={(flight, date) => handleSearch(flight, date, false)}
+          onRouteSearch={handleRouteSearch}
           loading={loading}
           initialFlight={searchValues.flight}
           initialDate={searchValues.date}
+          initialArrival={searchValues.arrival}
+          initialOrigin={searchValues.origin}
           onUrlSync={writeSearchParams}
+          onRouteUrlSync={writeRouteSearchParams}
         />
 
         {error && (
@@ -121,9 +207,21 @@ export default function Home() {
           </div>
         )}
 
-        {!data && !loading && !error && (
+        {matches.length > 0 && (
+          <div className="mt-8">
+            <FlightMatchList
+              flights={matches}
+              onSelect={(flightNumber) => {
+                writeSearchParams(flightNumber, searchValues.date);
+                void handleSearch(flightNumber, searchValues.date, false);
+              }}
+            />
+          </div>
+        )}
+
+        {!data && !loading && !error && matches.length === 0 && (
           <p className="mt-8 text-center text-sm text-slate-500">
-            Examples: AF123 (demo), BA117 (simulated delay)
+            Examples: AF123 · route search NCE from BER on today&apos;s date
           </p>
         )}
       </div>

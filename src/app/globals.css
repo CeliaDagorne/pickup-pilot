@@ -18,6 +18,11 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+button:not(:disabled),
+a[href] {
+  cursor: pointer;
+}
+
 .hero-gradient {
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(14, 165, 233, 0.35), transparent),
@@ -34,7 +39,7 @@ body {
 }
 
 .btn-primary {
-  @apply rounded-xl bg-sky-500 px-6 py-3 font-semibold text-white shadow-lg shadow-sky-500/25 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50;
+  @apply cursor-pointer rounded-xl bg-sky-500 px-6 py-3 font-semibold text-white shadow-lg shadow-sky-500/25 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 @keyframes fade-in {

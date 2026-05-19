@@ -1,4 +1,4 @@
-import type { FlightInfo, FlightStatus } from "../types";
+import type { FlightInfo, FlightSearchResult, FlightStatus } from "../types";
 import { formatLegDate, formatTime } from "../flight-parser";
 
 function isDepartureInFuture(scheduledLocal?: string): boolean {
@@ -37,6 +37,14 @@ function mapStatus(
   }
 
   return { status: "scheduled", label: "Scheduled" };
+}
+
+function normalizeFlightNumber(value: string) {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function normalizeAirport(value: string) {
+  return value.trim().toUpperCase();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,4 +159,145 @@ export async function fetchAeroDataBoxFlight(
   const flight = flights[0];
   if (!flight) return null;
   return mapAeroFlight(flight, display, date);
+}
+
+async function fetchAirportArrivalsWindow(
+  arrivalAirport: string,
+  date: string,
+  fromTime: string,
+  toTime: string,
+): Promise<unknown[]> {
+  const apiKey = process.env.AERODATABOX_API_KEY;
+  if (!apiKey) throw new Error("AERODATABOX_API_KEY missing");
+
+  const host = process.env.AERODATABOX_HOST ?? "aerodatabox.p.rapidapi.com";
+  const params = new URLSearchParams({
+    direction: "Arrival",
+    withLeg: "true",
+    withCancelled: "true",
+    withCodeshared: "true",
+    withCargo: "false",
+    withPrivate: "false",
+  });
+
+  const res = await fetch(
+    `https://${host}/flights/airports/iata/${encodeURIComponent(
+      arrivalAirport,
+    )}/${date}T${fromTime}/${date}T${toTime}?${params}`,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "X-RapidAPI-Key": apiKey,
+        "X-RapidAPI-Host": host,
+      },
+    },
+  );
+
+  const body = await res.text();
+
+  if (!res.ok) {
+    throw new Error(
+      `AeroDataBox airport search failed (${res.status}): ${
+        body.slice(0, 200) || res.statusText
+      }`,
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error("AeroDataBox returned an invalid airport search response");
+  }
+
+  if (!data || typeof data !== "object") return [];
+  const arrivals = (data as { arrivals?: unknown[] }).arrivals;
+  return Array.isArray(arrivals) ? arrivals : [];
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAirportArrival(raw: any, arrivalAirport: string): FlightSearchResult | null {
+  const number = typeof raw.number === "string" ? raw.number : "";
+  if (!number) return null;
+
+  const dep = raw.departure;
+  const arr = raw.arrival;
+  const statusText =
+    typeof raw.status === "string" ? raw.status : raw.status?.text;
+  const { status, label } = mapStatus(statusText, dep?.scheduledTime?.local);
+
+  return {
+    flightNumber: normalizeFlightNumber(number),
+    airline: raw.airline?.name ?? raw.airline?.iata ?? number.slice(0, 2),
+    status,
+    statusLabel: label,
+    departure: {
+      airport: dep?.airport?.iata ?? "—",
+      city: dep?.airport?.municipalityName ?? dep?.airport?.name ?? "",
+      scheduledTime: formatTime(dep?.scheduledTime?.local ?? dep?.scheduledTime?.utc),
+    },
+    arrival: {
+      airport: arr?.airport?.iata ?? arrivalAirport,
+      city: arr?.airport?.municipalityName ?? arr?.airport?.name ?? "",
+      scheduledTime: formatTime(arr?.scheduledTime?.local ?? arr?.scheduledTime?.utc),
+      terminal: arr?.terminal ?? null,
+    },
+  };
+}
+
+export async function searchAeroDataBoxArrivals({
+  arrivalAirport,
+  originAirport,
+  date,
+}: {
+  arrivalAirport: string;
+  originAirport?: string;
+  date: string;
+}): Promise<FlightSearchResult[]> {
+  const normalizedArrival = normalizeAirport(arrivalAirport);
+  const normalizedOrigin = originAirport ? normalizeAirport(originAirport) : "";
+
+  const morning = await fetchAirportArrivalsWindow(
+    normalizedArrival,
+    date,
+    "00:00",
+    "11:59",
+  );
+  // Basic RapidAPI plans can reject concurrent/rapid requests.
+  await wait(1100);
+  const afternoon = await fetchAirportArrivalsWindow(
+    normalizedArrival,
+    date,
+    "12:00",
+    "23:59",
+  );
+
+  const seen = new Set<string>();
+  return [...morning, ...afternoon]
+    .filter((raw) => {
+      if (!normalizedOrigin) return true;
+      const depAirport =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (raw as any)?.departure?.airport?.iata?.toUpperCase() ?? "";
+      return depAirport === normalizedOrigin;
+    })
+    .sort((a, b) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const aTime = (a as any)?.arrival?.scheduledTime?.local ?? "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bTime = (b as any)?.arrival?.scheduledTime?.local ?? "";
+      return new Date(aTime).getTime() - new Date(bTime).getTime();
+    })
+    .map((raw) => mapAirportArrival(raw, normalizedArrival))
+    .filter((flight): flight is FlightSearchResult => Boolean(flight))
+    .filter((flight) => {
+      const key = `${flight.flightNumber}-${flight.arrival.scheduledTime}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }

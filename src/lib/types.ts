@@ -56,3 +56,21 @@ export interface FlightLookupResult {
   weather: ArrivalWeather | null;
   checklist: ChecklistItem[];
 }
+
+export interface FlightSearchResult {
+  flightNumber: string;
+  airline: string;
+  status: FlightStatus;
+  statusLabel: string;
+  departure: {
+    airport: string;
+    city: string;
+    scheduledTime: string;
+  };
+  arrival: {
+    airport: string;
+    city: string;
+    scheduledTime: string;
+    terminal: string | null;
+  };
+}
