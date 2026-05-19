@@ -1,5 +1,6 @@
 import type { FlightInfo, FlightSearchResult, FlightStatus } from "../types";
 import { formatLegDate, formatTime } from "../flight-parser";
+import { aerodataboxFetch } from "./aerodatabox-request";
 
 function isDepartureInFuture(scheduledLocal?: string): boolean {
   if (!scheduledLocal) return false;
@@ -129,16 +130,14 @@ export async function fetchAeroDataBoxFlight(
     withFlightPlan: "false",
   });
 
-  const res = await fetch(
-    `https://${host}/flights/number/${encodeURIComponent(display)}?${params}`,
-    {
-      headers: {
-        "Content-Type": "application/json",
-        "X-RapidAPI-Key": apiKey,
-        "X-RapidAPI-Host": host,
-      },
+  const url = `https://${host}/flights/number/${encodeURIComponent(display)}?${params}`;
+  const res = await aerodataboxFetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-RapidAPI-Key": apiKey,
+      "X-RapidAPI-Host": host,
     },
-  );
+  });
 
   const body = await res.text();
 
@@ -180,16 +179,21 @@ async function fetchAirportArrivalsWindow(
     withPrivate: "false",
   });
 
-  const res = await fetch(
-    `https://${host}/flights/airports/iata/${encodeURIComponent(
-      arrivalAirport,
-    )}/${date}T${fromTime}/${date}T${toTime}?${params}`,
+  const url = `https://${host}/flights/airports/iata/${encodeURIComponent(
+    arrivalAirport,
+  )}/${date}T${fromTime}/${date}T${toTime}?${params}`;
+
+  const res = await aerodataboxFetch(
+    url,
     {
       headers: {
         "Content-Type": "application/json",
         "X-RapidAPI-Key": apiKey,
         "X-RapidAPI-Host": host,
       },
+    },
+    {
+      cacheKey: `arrivals:${arrivalAirport}:${date}:${fromTime}-${toTime}`,
     },
   );
 
@@ -213,10 +217,6 @@ async function fetchAirportArrivalsWindow(
   if (!data || typeof data !== "object") return [];
   const arrivals = (data as { arrivals?: unknown[] }).arrivals;
   return Array.isArray(arrivals) ? arrivals : [];
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,14 +261,13 @@ export async function searchAeroDataBoxArrivals({
   const normalizedArrival = normalizeAirport(arrivalAirport);
   const normalizedOrigin = originAirport ? normalizeAirport(originAirport) : "";
 
+  // Two 12h windows (API max range); requests are serialized in aerodataboxFetch.
   const morning = await fetchAirportArrivalsWindow(
     normalizedArrival,
     date,
     "00:00",
     "11:59",
   );
-  // Basic RapidAPI plans can reject concurrent/rapid requests.
-  await wait(1100);
   const afternoon = await fetchAirportArrivalsWindow(
     normalizedArrival,
     date,

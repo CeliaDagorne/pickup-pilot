@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchFlightsByRoute } from "@/lib/providers";
+import { isAeroDataBoxRateLimitError } from "@/lib/providers/aerodatabox-request";
 
 function airportParam(value: string | null) {
   const normalized = value?.trim().toUpperCase() ?? "";
@@ -47,6 +48,17 @@ export async function GET(request: NextRequest) {
     console.error("[/api/flights/search]", err);
     const message =
       err instanceof Error ? err.message : "Could not search flights";
+
+    if (isAeroDataBoxRateLimitError(message)) {
+      return NextResponse.json(
+        {
+          error:
+            "AeroDataBox rate limit reached (1 request/second on BASIC). Wait a few seconds and try again. Route search uses 2 API calls per search.",
+        },
+        { status: 429 },
+      );
+    }
+
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

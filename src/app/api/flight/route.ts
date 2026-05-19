@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildChecklist } from "@/lib/checklist";
 import { parseFlightNumber } from "@/lib/flight-parser";
 import { lookupFlight } from "@/lib/providers";
+import { isAeroDataBoxRateLimitError } from "@/lib/providers/aerodatabox-request";
 import { fetchArrivalWeather } from "@/lib/weather";
 
 export async function GET(request: NextRequest) {
@@ -57,6 +58,17 @@ export async function GET(request: NextRequest) {
     console.error("[/api/flight]", err);
     const message =
       err instanceof Error ? err.message : "Something went wrong";
+
+    if (isAeroDataBoxRateLimitError(message)) {
+      return NextResponse.json(
+        {
+          error:
+            "AeroDataBox rate limit reached (1 request/second on BASIC). Wait a few seconds and try again.",
+        },
+        { status: 429 },
+      );
+    }
+
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
